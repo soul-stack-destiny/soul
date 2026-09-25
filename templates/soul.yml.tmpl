@@ -1,0 +1,15 @@
+# Rendered by destiny soul; hand edits are overwritten by the next run.
+#
+# The two ports are two PHASES and are not interchangeable: bootstrap_port is the
+# Bootstrap RPC (`soul init`, server-only TLS), event_stream_port is the mTLS stream
+# (`soul run`). Both keys are required and neither is derived from the other.
+paths:
+  modules: {{ .vars.modules_dir }}
+  seed:    {{ .vars.seed_dir }}
+keeper:
+  endpoints:
+    - host: {{ .vars.keeper_host }}
+      event_stream_port: {{ .vars.keeper_event_stream_port }}
+      bootstrap_port: {{ .vars.keeper_bootstrap_port }}
+  tls:
+    ca: {{ .vars.ca_path }}

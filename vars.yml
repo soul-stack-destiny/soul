@@ -1,0 +1,49 @@
+# vars.yml — destiny-locals for soul (docs/destiny/vars.md): invariants, the SAME for
+# every incarnation and NOT overridable from outside (not input — the "contract vs
+# internals" boundary). No secrets here; the file is committed.
+#
+# Every path is a LITERAL rather than a CEL concatenation, so each one can be compared
+# against the engine's own constant by equality. `keeper/internal/soulinstall` is the
+# normative description of an installed host; a path that drifts from it produces a host
+# that installs green and never onboards. (The check that did that comparison is pending —
+# see the note in destiny.yml.)
+
+# ── systemd unit name ───────────────────────────────────────────────────────────────
+# INVARIANT: the contract between the unit file, core.service.running and the paths
+# below. Matching the binary name is coincidental.
+service_name: soul
+
+# ── /etc/soul ───────────────────────────────────────────────────────────────────────
+conf_dir:    /etc/soul
+tls_dir:     /etc/soul/tls
+ca_path:     /etc/soul/tls/keeper-ca.pem
+config_path: /etc/soul/soul.yml
+unit_path:   /etc/systemd/system/soul.service
+
+# ★ env_path is NOT read by the unit this destiny renders — that one names the config
+# directly. It exists because the PACKAGED unit at the same `unit_path` carries
+# `EnvironmentFile=/etc/soul/soul.env` with no `-` prefix, which systemd treats as fatal
+# when the file is missing. The two install models overwrite each other's unit at that one
+# path deliberately; writing this file is what keeps the crossed pair — packaged unit over
+# a host this destiny installed — starting instead of failing on a missing environment
+# file. Path and key are the package's (`deploy/systemd/soul.env`).
+env_path: /etc/soul/soul.env
+
+# ── /usr/local/bin ──────────────────────────────────────────────────────────────────
+bin_path: /usr/local/bin/soul
+
+# ── /var/lib/soul-stack ─────────────────────────────────────────────────────────────
+# `modules` and `seed` are the two keys soul.yml's `paths:` block declares; there is no
+# `bin` here (that prefix belongs to keeper.push's delivery layout, not to a pull host).
+state_dir:   /var/lib/soul-stack
+modules_dir: /var/lib/soul-stack/modules
+seed_dir:    /var/lib/soul-stack/seed
+
+# ★ seed_cert is `<seed_dir>/current/cert.pem` — soul's own seed layout (symlink
+# `current` + CertFile, soul/internal/seed). It is the idempotency guard of the `soul
+# init` redeem, and the token is SINGLE-USE: a seed_cert that does not point at where
+# soul actually writes stops finding the certificate, redeems a spent token a second
+# time, and breaks a host that had already onboarded. It is spelled out rather than
+# derived so the guard can compare it to soulinstall.SeedCertPath, which is itself
+# pinned against soul/internal/seed.
+seed_cert: /var/lib/soul-stack/seed/current/cert.pem

@@ -1,0 +1,50 @@
+# SUBJECT — the `allow_private: true` branch, which is the ordinary case rather than the
+# exotic one: a site whose machines have no egress serves the agent binary from its own
+# mirror on an RFC1918 address, and core.url's SSRF guard blocks exactly that dial. Left
+# uncovered, the branch that every real install takes would be the one no case exercises.
+#
+# The guard itself is not weakened anywhere else by this flag: the checksum is still
+# verified before the file is published, and the bootstrap channel is still pinned to the
+# Keeper CA.
+name: soul destiny lifts the SSRF guard for an internal artifact mirror
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    keeper_host: 10.52.88.56
+    keeper_bootstrap_port: 9442
+    keeper_event_stream_port: 9443
+    keeper_ca: |
+      -----BEGIN CERTIFICATE-----
+      ZmFrZS1rZWVwZXItY2E=
+      -----END CERTIFICATE-----
+    binary_url: https://mirror.internal.example/raw/soul-stack/soul-linux-amd64
+    binary_sha256: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    # Empty: this models a re-apply against a host that already holds an identity, so
+    # there is no token to hand over. The redeem step is guarded on the seed certificate,
+    # so it skips rather than spending an empty one.
+    bootstrap_token: ""
+    allow_private: true
+  soulprint:
+    os:
+      arch: amd64
+
+assert:
+  task_present:
+    - module: core.url.fetched
+      params_subset:
+        url: https://mirror.internal.example/raw/soul-stack/soul-linux-amd64
+        path: /usr/local/bin/soul
+        checksum: "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        mode: "0755"
+        allow_private: true
+
+    # The redeem step is in the plan either way — it is the `creates:` guard on the host
+    # that decides, not a render-time branch. An empty token reaching `soul init` fails
+    # with soul's own message; nothing offline can tell a fresh host from an onboarded one.
+    - module: core.exec.run
+      params_subset:
+        cmd: /usr/local/bin/soul
+        creates: /var/lib/soul-stack/seed/current/cert.pem
+        env:
+          SOUL_BOOTSTRAP_TOKEN: ""

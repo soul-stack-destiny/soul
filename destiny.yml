@@ -1,0 +1,145 @@
+name: soul
+description: >-
+  Install the Soul Stack agent on a host and redeem its one-shot bootstrap token:
+  lay out /etc/soul and /var/lib/soul-stack, pin the Keeper CA, render soul.yml and
+  the systemd unit, fetch the checksum-verified binary, mint the SoulSeed with
+  `soul init` and bring soul.service up enabled at boot.
+
+# Destiny version is a git ref (ADR-007) — no top-level `version:`. Task list is in
+# tasks/main.yml, invariant paths and modes in vars.yml. Core modules only →
+# required_modules: not needed.
+#
+# The normative description of the result this destiny must reach is
+# `keeper/internal/soulinstall` in the engine repository (paths, modes, soul.yml body, the
+# unit). That package has no production caller — it describes an outcome, not a procedure —
+# and this destiny is the procedure. The requirements on whoever installs a host are
+# ADR-063 amendment 2026-09-09.
+#
+# ⚠ NOTHING CHECKS THE TWO AGAINST EACH OTHER YET. The guards that did (12 Go tests + 3 L0
+# cases) lived in the engine tree and read this destiny from `examples/destiny/soul`; when
+# this artifact moved to its own repository they lost their subject, and how an out-of-tree
+# destiny gets checked is a decision still open. Until then every invariant below is held
+# by its comment alone — read them as claims to verify, not as facts under test.
+#
+# ★ THIS IS THE ARTIFACT INSTALL AND THE PACKAGE IS THE OTHER ONE, and they DELIBERATELY
+# overwrite each other. Both write /etc/systemd/system/soul.service, /etc/soul/soul.yml and
+# /etc/soul/soul.env; the package puts its binary at /usr/bin/soul (dpkg owns it) and this
+# destiny fetches one to /usr/local/bin/soul. Whichever ran last wins, that is accepted, and
+# what makes it harmless is that the two are kept the SAME where it matters:
+#
+#   * the unit bodies agree directive for directive — same supervision (Type=notify,
+#     watchdog, StartLimit) and the same soft hardening profile — pinned by
+#     the packaged unit (`deploy/systemd/soul.service` in the engine repository);
+#   * this destiny renders /etc/soul/soul.env too, which its own unit does not read: the
+#     packaged unit's `EnvironmentFile=` has no `-` prefix, so a packaged unit over a host
+#     this destiny installed would otherwise refuse to start on a missing file;
+#   * ownership is not managed here at all (tasks/layout.yml), so a packaged agent keeps
+#     access to its own state.
+#
+# Two differences survive on purpose and are listed in that guard's `unitDivergences`: the
+# ACCOUNT (the package runs the agent as `soul-stack`; a fresh VM has no such account and no
+# package to create one) and the BINARY PATH. So the one crossing that still needs a second
+# apply is a packaged unit landing on a fresh-VM install: it names an account that host does
+# not have. Everything else survives the overlap.
+#
+# Nothing here restarts the service, so any swap lands at the host's next restart rather
+# than during the run.
+
+input:
+  # ── Keeper endpoint ─────────────────────────────────────────────────────────────
+  # The address the HOST can actually reach Keeper on, not Keeper's bind address.
+  # No `format:` — a site legitimately reaches its Keeper by bare IP through a
+  # load balancer, and `hostname`/`fqdn` would reject that.
+  keeper_host:
+    type: string
+    required: true
+    min_length: 1
+    description: >-
+      Host or IP the agent dials Keeper on. Must be covered by Keeper's server
+      certificate SANs — the bootstrap channel verifies the name it dialed.
+
+  # ★ TWO ports, and they are DIFFERENT phases: `soul init` talks Bootstrap
+  # (server-only TLS, its own listener), `soul run` talks EventStream (mTLS).
+  # soul.yml requires both and accepts neither alone. Deriving both from one endpoint
+  # is what made soul dial EventStream on the Bootstrap port and get
+  # `Unimplemented: method EventStream` — ADR-063 amendment "init phase". Equal values
+  # are still legal (a single-port balancer), so the contract is two NAMED fields
+  # rather than a rule that they differ.
+  keeper_bootstrap_port:
+    type: integer
+    required: true
+    min: 1
+    max: 65535
+    description: Keeper's Bootstrap RPC port (`soul init`), keeper.yml::listen.grpc.bootstrap.
+  keeper_event_stream_port:
+    type: integer
+    required: true
+    min: 1
+    max: 65535
+    description: Keeper's EventStream port (`soul run`, mTLS), keeper.yml::listen.grpc.event_stream.
+
+  # Public material, but it arrives as a value rather than a path: a destiny sees only
+  # its own input (ADR-009), so the caller resolves `${ vault(...) }` and passes the PEM.
+  keeper_ca:
+    type: string
+    required: true
+    description: >-
+      PEM-encoded Keeper CA. The agent pins the bootstrap channel to it; without it
+      there is no channel at all.
+
+  # ── The agent artifact ──────────────────────────────────────────────────────────
+  # https-only is core.url.fetched's own Validate; the pattern refuses the downgrade
+  # one step earlier, at the input gate, where the message names the field. `[` and `]`
+  # are in the class on purpose: an IPv6-literal host (`https://[fd00::1]/soul`) is the
+  # only spelling an IPv6-only internal mirror has, and the allow_private path below
+  # exists for exactly such a mirror.
+  binary_url:
+    type: string
+    required: true
+    pattern: "^https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%\\[\\]-]+$"
+    description: >-
+      URL of the `soul` binary for this host's architecture. A site without egress
+      points this at its own mirror — the engine knows nothing about this address.
+
+  # `required: true` with NO default, per production-conventions §7: no hash is a clean
+  # refusal, never a fetch with a placeholder. The mirror relaxation node-exporter
+  # documents does NOT apply here — this binary is what executes every module and
+  # every plugin on the host afterwards.
+  binary_sha256:
+    type: string
+    required: true
+    pattern: "^sha256:[0-9a-f]{64}$"
+    description: >-
+      SHA-256 of the artifact at binary_url, form "sha256:<hex>". Verified BEFORE the
+      file becomes executable and before it becomes `soul`.
+
+  # ── Onboarding ──────────────────────────────────────────────────────────────────
+  # Optional on purpose: applied to a host that already holds an identity there is no
+  # token to hand over, and that is the ordinary case — the redeem step is guarded on
+  # the seed certificate and skips itself. A fresh host with no token fails in `soul
+  # init` with soul's own message; nothing offline can tell the two hosts apart.
+  bootstrap_token:
+    type: string
+    secret: true
+    default: ""
+    description: >-
+      One-shot bootstrap token for this host, as minted by `core.bootstrap.issued`.
+      Leave unset for a host that already holds a SoulSeed. Never reaches argv.
+
+  # SSRF-guard opt-out, same shape as node-exporter/vector install.allow_private.
+  allow_private:
+    type: boolean
+    default: false
+    description: >-
+      Lift core.url's SSRF guard for the binary fetch (allow dialing RFC1918 /
+      loopback). Needed when binary_url resolves to an internal mirror. Default false
+      — the guard stays on.
+
+validate:
+  # An empty or truncated field in Vault writes a file and the write step is GREEN;
+  # what turns red is the bootstrap channel, minutes later and under someone else's
+  # cause. `required: true` rejects only the empty string, so the shape is checked here,
+  # at render, before anything reaches a host.
+  - that: "input.keeper_ca.contains('BEGIN CERTIFICATE')"
+    message: "keeper_ca must be a PEM-encoded certificate — an empty or truncated value installs silently and fails later, on the bootstrap channel"
+

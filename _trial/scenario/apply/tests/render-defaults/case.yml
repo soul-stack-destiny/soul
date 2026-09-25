@@ -1,0 +1,160 @@
+# L0 test (Trial, ADR-023) for destiny soul through the apply harness.
+#
+# Render-only and hermetic: it checks that apply:destiny expands soul into the expected
+# flat plan after the CEL phase. L0 downloads nothing, runs nothing and does not execute
+# text/template — the file bodies are checked by the .tmpl render test and the paths/modes
+# by the plan below.
+#
+# The plan is the subject in full, not a sample of it. Four of the mistakes pinned here
+# were each bought by a live run: a token placed but never spent, a redeem with no guard
+# on the seed certificate, a bare start instead of enable, and an unverified binary.
+name: soul destiny renders layout/config/install/onboard plan
+
+# L0 takes input as-is and does NOT apply the scenario contract's defaults (Keeper
+# substitutes those at invocation, before render), so they are spelled out here.
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    keeper_host: keeper.example.com
+    keeper_bootstrap_port: 9442
+    keeper_event_stream_port: 9443
+    keeper_ca: |
+      -----BEGIN CERTIFICATE-----
+      ZmFrZS1rZWVwZXItY2E=
+      -----END CERTIFICATE-----
+    binary_url: https://dist.example.com/soul-stack/soul
+    binary_sha256: "sha256:0057cd73fa4968c4ed2a2d6d604246bd355ba879e3a82d67256fb0c084655353"
+    bootstrap_token: tok-vm1
+    allow_private: false
+  soulprint:
+    os:
+      arch: amd64
+
+assert:
+  task_present:
+    # ── layout.yml: five directories, each mode named ───────────────────────────
+    # The 0700 trio is the deliberate divergence from the engine's blueprint
+    # (/etc/soul 0755, /etc/soul/tls 0600, seed 0755 there) — see tasks/layout.yml.
+    #
+    # No owner/group on any of them, and that is asserted by task_absent below rather
+    # than by their absence here: a chown to root plus 0700 locks a packaged agent
+    # (`soul-stack:soul-stack`) out of its own configuration and its own SoulSeed.
+    - module: core.directory.present
+      params_subset: { path: /var/lib/soul-stack,         mode: "0755" }
+    - module: core.directory.present
+      params_subset: { path: /var/lib/soul-stack/modules, mode: "0755" }
+    - module: core.directory.present
+      params_subset: { path: /var/lib/soul-stack/seed,    mode: "0700" }
+    - module: core.directory.present
+      params_subset: { path: /etc/soul,                   mode: "0700" }
+    - module: core.directory.present
+      params_subset: { path: /etc/soul/tls,               mode: "0700" }
+
+    # ── config.yml: CA, soul.yml, unit ──────────────────────────────────────────
+    # The CA reaches the template as a resolved PEM (the caller does the vault() call),
+    # and the file floor is 0600 in a 0700 directory.
+    #
+    # ★ render_context is pinned, not just `template_content: <present>`. `.vars.ca_pem`
+    # has exactly one source — the `vars:` lift on this step — and the text/template
+    # render is strict (missingkey=error) but happens on the HOST: L0 never executes it.
+    # Without this assert, dropping or misspelling that lift is green through the whole
+    # gate and lands as "no CA, no bootstrap channel" on the machine.
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/soul/tls/keeper-ca.pem
+        template_content: "<present>"
+        mode: "0600"
+        render_context:
+          vars:
+            ca_pem: |
+              -----BEGIN CERTIFICATE-----
+              ZmFrZS1rZWVwZXItY2E=
+              -----END CERTIFICATE-----
+          self:
+            sid: trial-host
+            covens: []
+            choirs: []
+            traits: {}
+            role: ""
+            os:
+              arch: amd64
+          role: ""
+
+    # ★ Both ports are in the context and they are DIFFERENT. Collapsing them to one
+    # value made soul dial EventStream on the Bootstrap port and answer
+    # `Unimplemented: method EventStream` (ADR-063 amendment "init phase"); a single
+    # var for both, or the two swapped, is red here.
+    #
+    # `paths.seed` of the rendered body comes from vars.seed_dir, the same var the
+    # redeem guard below is derived from — the pair only works together.
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/soul/soul.yml
+        template_content: "<present>"
+        mode: "0644"
+        render_context:
+          vars:
+            modules_dir: /var/lib/soul-stack/modules
+            seed_dir: /var/lib/soul-stack/seed
+            ca_path: /etc/soul/tls/keeper-ca.pem
+            keeper_host: keeper.example.com
+            keeper_bootstrap_port: 9442
+            keeper_event_stream_port: 9443
+          self:
+            sid: trial-host
+            covens: []
+            choirs: []
+            traits: {}
+            role: ""
+            os:
+              arch: amd64
+          role: ""
+
+    # Written for the PACKAGED unit's benefit: its `EnvironmentFile=` has no `-`, so a
+    # packaged unit landing on a host this destiny installed would refuse to start without
+    # this file. The destiny's own unit names the config directly.
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/soul/soul.env
+        template_content: "<present>"
+        mode: "0644"
+
+    - module: core.file.rendered
+      params_subset:
+        path: /etc/systemd/system/soul.service
+        template_content: "<present>"
+        mode: "0644"
+
+    # ── install.yml: the verified binary ────────────────────────────────────────
+    # checksum is NOT optional for this artifact: it is what executes every module and
+    # every plugin on the host afterwards. The module verifies it before chmod and
+    # before the rename, so a file that did not match becomes neither executable nor
+    # `soul`.
+    - module: core.url.fetched
+      params_subset:
+        url: https://dist.example.com/soul-stack/soul
+        path: /usr/local/bin/soul
+        checksum: "sha256:0057cd73fa4968c4ed2a2d6d604246bd355ba879e3a82d67256fb0c084655353"
+        mode: "0755"
+        allow_private: false
+
+    # ── onboard.yml: redeem, then bring up ─────────────────────────────────────
+    # ★ The token is in `env`, never in `cmd`/`args`: argv is visible in `ps`,
+    # `audit.log` and journald ON THE MACHINE. And `creates:` is the guard that keeps
+    # a SINGLE-USE token from being spent twice on a host that already onboarded — the
+    # same path soul itself writes the seed certificate to.
+    - module: core.exec.run
+      params_subset:
+        cmd: /usr/local/bin/soul
+        args: [init, --config, /etc/soul/soul.yml]
+        creates: /var/lib/soul-stack/seed/current/cert.pem
+        env:
+          SOUL_BOOTSTRAP_TOKEN: tok-vm1
+
+    # ★ `enabled: true`, not a bare start: without it the unit does not return after a
+    # reboot. There is no core.service.restarted in this plan by design — the agent
+    # applying the destiny would be killing its own run (tasks/main.yml).
+    - module: core.service.running
+      params_subset:
+        name: soul
+        enabled: true

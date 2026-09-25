@@ -1,0 +1,72 @@
+# tasks/config.yml — the three files an installed host reads: the pinned Keeper CA,
+# soul.yml and the systemd unit.
+#
+# All three go through core.file.rendered rather than core.file.present with inline
+# `content:`: `rendered` writes atomically (render to memory → temp + rename in the same
+# directory), and the `content:` branch of `present` does not — a failure mid-write leaves
+# a truncated file, and two of these three are read by a daemon that may already be
+# running.
+#
+# No `owner:`/`group:` — see tasks/layout.yml on why this destiny manages no ownership.
+#
+# ★ THE UNIT PATH IS OWNED BY THIS DESTINY, and it is the path the DISTRIBUTION PACKAGE
+# uses too (`deploy/systemd/soul.service` → /etc/systemd/system/soul.service). Applied to
+# a host installed from the .deb this step REPLACES the packaged unit — with one that
+# carries no `User=`, no `EnvironmentFile=` and no StartLimit — and the swap lands at the
+# host's next restart, not during the run. The two install models are alternatives, not
+# layers; destiny.yml says so in its header.
+#
+# No `register:` and no `onchanges:` consumer anywhere: see tasks/main.yml on why nothing
+# here restarts the agent.
+
+# The CA is public material, but the directory it lands in is 0700 and the file 0600 —
+# the same floor the engine's SSH install uses (soulinstall.KeeperCAMode). Nothing needs
+# to read it but the account the agent runs as.
+- name: Pin the Keeper CA on the host
+  module: core.file.rendered
+  params:
+    path:     "${ vars.ca_path }"
+    template: templates/keeper-ca.pem.tmpl
+    mode:     "0600"
+    vars:
+      # Resolved PEM, not a vault-ref: a destiny sees only its own input (ADR-009), so
+      # the caller does the `${ vault(...) }`. Shape is checked by destiny.yml::validate.
+      #
+      # ⚠ This lift is the template's ONLY source for `.vars.ca_pem`, and the render is
+      # strict (missingkey=error): dropping or misspelling the key writes nothing and
+      # fails on the host, with no CA and so no bootstrap channel. The L0 case therefore
+      # pins this step's render_context, not just that a template was attached.
+      ca_pem: "${ input.keeper_ca }"
+
+# ★ `paths.seed` in the body below and `vars.seed_cert` (the redeem guard in
+# onboard.yml) name the same directory, and they are only correct TOGETHER: the guard
+# looks for <paths.seed>/current/cert.pem, so moving one without the other stops finding
+# the certificate and spends a single-use token twice. Both come from vars.yml, and the
+# gate compares the pair — see the note on seed_cert there.
+- name: Render the soul agent configuration
+  module: core.file.rendered
+  params:
+    path:     "${ vars.config_path }"
+    template: templates/soul.yml.tmpl
+    mode:     "0644"
+    vars:
+      keeper_host:              "${ input.keeper_host }"
+      keeper_bootstrap_port:    "${ input.keeper_bootstrap_port }"
+      keeper_event_stream_port: "${ input.keeper_event_stream_port }"
+
+# Written for the PACKAGED unit's benefit, not for this destiny's own: see vars.env_path.
+# `EnvironmentFile=` without a `-` is fatal when the file is absent, so a packaged unit
+# landing on a host this destiny installed would refuse to start without it.
+- name: Render the soul environment file
+  module: core.file.rendered
+  params:
+    path:     "${ vars.env_path }"
+    template: templates/soul.env.tmpl
+    mode:     "0644"
+
+- name: Render the soul systemd unit
+  module: core.file.rendered
+  params:
+    path:     "${ vars.unit_path }"
+    template: templates/soul.service.tmpl
+    mode:     "0644"

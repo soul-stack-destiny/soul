@@ -1,0 +1,58 @@
+# tasks/layout.yml — the directories an installed host must have, each with its mode
+# named EXPLICITLY.
+#
+# Naming every mode is what this file is for. `install -d -m` sets the mode on the
+# leaf only and gives every parent it had to create 0755 regardless (coreutils), so the
+# shell form this replaces could not express "0700 on a directory whose parent I am also
+# creating" at all. core.directory.present has no such trap — and the mode also becomes
+# drift-fixing here: the module chmods a directory back when it has wandered.
+#
+# Parents are created by the step above each child, so `parents: true` is nowhere needed
+# and the order below is load-bearing.
+#
+# ★ OWNERSHIP IS DELIBERATELY NOT MANAGED — no `owner:`/`group:` on any step in this
+# destiny. The agent does NOT have to run as root: the packaged install
+# (`deploy/systemd/soul.service`, `docs/operations/deb-onboarding.md`) runs it as
+# `soul-stack:soul-stack` and owns these very directories under that account. A
+# `chown root:root` here would combine with the 0700 below to lock that agent out of its
+# own configuration and its own SoulSeed — and it would do so GREEN, because nothing in
+# this destiny restarts the service, so the host would keep running until its next reboot
+# and then never come back. The shell form chowned nothing either; this is the same
+# behaviour, stated rather than inherited.
+#
+# ★ THREE MODES DIVERGE FROM THE ENGINE'S BLUEPRINT ON PURPOSE (keeper/internal/soulinstall):
+# it gives /etc/soul 0755, /etc/soul/tls 0600 — a directory with no right to enter it —
+# and the seed directory 0755, where soul itself creates 0700. The stricter set is the
+# one a real install ran with, so it is the one carried here; the guard compares PATHS
+# against the blueprint and deliberately not modes.
+
+- name: Ensure the soul state directory exists
+  module: core.directory.present
+  params:
+    path: "${ vars.state_dir }"
+    mode: "0755"
+
+- name: Ensure the module cache directory exists
+  module: core.directory.present
+  params:
+    path: "${ vars.modules_dir }"
+    mode: "0755"
+
+# 0700: the directory holds the host's private key material.
+- name: Ensure the SoulSeed directory exists
+  module: core.directory.present
+  params:
+    path: "${ vars.seed_dir }"
+    mode: "0700"
+
+- name: Ensure the soul configuration directory exists
+  module: core.directory.present
+  params:
+    path: "${ vars.conf_dir }"
+    mode: "0700"
+
+- name: Ensure the soul TLS directory exists
+  module: core.directory.present
+  params:
+    path: "${ vars.tls_dir }"
+    mode: "0700"

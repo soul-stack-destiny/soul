@@ -1,0 +1,48 @@
+# tasks/onboard.yml — redeem the bootstrap token, then bring the agent up.
+#
+# ★ THE TOKEN IS SPENT, NOT PLACED. A SoulSeed is created by `soul init` and by nothing
+# else: there is no code path that picks up a token file, so an install that writes the
+# token and stops leaves an agent in a restart loop on "SoulSeed not found". This step is
+# the redeem, and the whole install is pointless without it.
+#
+# ★ AND IT STANDS BEHIND A GUARD ON THE SEED CERTIFICATE. The token is SINGLE-USE:
+# redeeming a second time on a host that already onboarded breaks the identity it had.
+# `creates:` is that guard — the file exists → the command is not run, changed=false. This
+# is also what makes a repeat apply of the whole destiny report unchanged.
+#
+# ★ THE TOKEN NEVER REACHES argv. A command argument is visible in `ps`, in `audit.log`
+# and in journald ON THE HOST ITSELF, which is the one place redaction cannot help. It
+# goes in `env:` — read by `soul init` as SOUL_BOOTSTRAP_TOKEN — and not on disk at all.
+# The shell form it replaces wrote /etc/soul/token 0400 only because a single
+# `core.ssh.run` step can feed stdin to one command and the redeem was the next one;
+# a destiny has no such seam, so the spent secret is not left lying on the machine, and
+# no step writes a value that differs run to run. A spent plaintext left on disk is a
+# named hazard, not a tidiness point: it stays usable against a working host for the rest
+# of the token's TTL (keeper/internal/grpc/integration_test.go, "after the host has
+# connected").
+#
+# ⚠ `env:` REPLACES the process environment, it does not extend it
+# (`soul/internal/coremod/util/exec.go`: `Env != nil = full replace`, os/exec semantics —
+# the module manifest's wording says "additional" and is wrong). This step survives it
+# because `soul init` reads exactly one variable and `cmd` is absolute, so no PATH lookup
+# happens. A second step added beside this one and given an `env:` map would run with an
+# EMPTY PATH, HOME and proxy set.
+- name: Redeem the bootstrap token and mint the SoulSeed
+  module: core.exec.run
+  params:
+    cmd:  "${ vars.bin_path }"
+    args: ["init", "--config", "${ vars.config_path }"]
+    creates: "${ vars.seed_cert }"
+    env:
+      SOUL_BOOTSTRAP_TOKEN: "${ input.bootstrap_token }"
+
+# ★ `enabled: true`, NOT a bare start: without it the unit does not come back after the
+# machine reboots, and a host that silently stops existing after its first reboot is the
+# expensive shape of this mistake. core.service.running does the enable in the same step
+# and re-reads changed unit files itself (daemon_reload: auto), so the separate
+# `systemctl daemon-reload` of the shell form is not needed.
+- name: Ensure the soul agent is running and enabled at boot
+  module: core.service.running
+  params:
+    name:    "${ vars.service_name }"
+    enabled: true

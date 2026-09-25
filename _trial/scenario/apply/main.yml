@@ -1,0 +1,51 @@
+# L0 harness for destiny soul (Trial, ADR-023). soul-trial L0 renders a SCENARIO, not a
+# standalone destiny, so the wrapper is a minimal scenario whose only task is
+# apply:destiny soul. Canonical layout: the destiny's own subdirectory,
+# `soul/_trial/scenario/apply/`.
+name: apply
+description: >-
+  Trial harness: delegates installing the Soul Stack agent to destiny soul via
+  apply:destiny. Not a service — a wrapper for L0-render of the destiny.
+
+input:
+  keeper_host:
+    type: string
+    required: true
+  keeper_bootstrap_port:
+    type: integer
+    default: 9442
+  keeper_event_stream_port:
+    type: integer
+    default: 9443
+  keeper_ca:
+    type: string
+    required: true
+  binary_url:
+    type: string
+    required: true
+  binary_sha256:
+    type: string
+    required: true
+  # Empty models the ordinary re-apply against a host that already holds an identity:
+  # the redeem step is guarded on the seed certificate either way.
+  bootstrap_token:
+    type: string
+    default: ""
+    secret: true
+  allow_private:
+    type: boolean
+    default: false
+
+tasks:
+  - name: Apply soul destiny
+    apply:
+      destiny: soul
+      input:
+        keeper_host:              "${ input.keeper_host }"
+        keeper_bootstrap_port:    "${ input.keeper_bootstrap_port }"
+        keeper_event_stream_port: "${ input.keeper_event_stream_port }"
+        keeper_ca:                "${ input.keeper_ca }"
+        binary_url:               "${ input.binary_url }"
+        binary_sha256:            "${ input.binary_sha256 }"
+        bootstrap_token:          "${ input.bootstrap_token }"
+        allow_private:            "${ input.allow_private }"

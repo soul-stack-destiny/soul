@@ -1,0 +1,26 @@
+# SUBJECT — the negative branch of destiny.yml::validate, and it can only be bought with
+# an input the schema accepts: `required: true` rejects the empty string, so the value
+# below is a non-empty string that is not a certificate. That is what a Vault field
+# holding a truncated or wrong-keyed value looks like from here.
+#
+# Without the rule the render succeeds, core.file.rendered writes the file and reports
+# GREEN, and what turns red is the bootstrap channel — a step later, minutes later, and
+# under someone else's cause.
+name: a keeper_ca that is not a PEM certificate is refused at render
+
+fixtures:
+  default_destiny_source: "file://../../{name}"
+  input:
+    keeper_host: keeper.example.com
+    keeper_bootstrap_port: 9442
+    keeper_event_stream_port: 9443
+    keeper_ca: "not-a-certificate"
+    binary_url: https://dist.example.com/soul-stack/soul
+    binary_sha256: "sha256:0057cd73fa4968c4ed2a2d6d604246bd355ba879e3a82d67256fb0c084655353"
+    bootstrap_token: tok-vm1
+    allow_private: false
+  soulprint:
+    os:
+      arch: amd64
+
+expect_render_error: "keeper_ca must be a PEM-encoded certificate"

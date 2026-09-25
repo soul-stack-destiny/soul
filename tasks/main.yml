@@ -1,0 +1,30 @@
+# tasks/main.yml — entry point of destiny soul. Only an include list: within-destiny
+# include expands inline into a flat list BEFORE render (docs/destiny/tasks.md §4).
+#
+# The order is the order, and each step needs its predecessors on disk:
+#   layout.yml  — the five directories, each with its mode named explicitly;
+#   config.yml  — Keeper CA, soul.yml, the systemd unit;
+#   install.yml — the checksum-verified binary;
+#   onboard.yml — redeem the one-shot token, then bring the unit up enabled at boot.
+#
+# ★ NOTHING HERE RESTARTS THE AGENT, and that is not an omission. Applied the ordinary
+# way — `apply:` against a registered host — this destiny is executed BY soul.service,
+# so a `core.service.restarted` step would kill the run that issued it, mid-plan, and
+# the report would never arrive.
+#
+# The cost is real, accepted, and covers all three artifacts rather than only the config:
+# against a host whose agent is already up, a re-rendered soul.yml, a re-rendered unit AND
+# a replaced binary all take effect at the next restart and not on this run. core.service
+# does the daemon-reload for the unit, but `running` never restarts an already-active
+# service, and a renamed binary leaves the live process on its old inode
+# (tasks/install.yml). So the run can legitimately report `changed` while the host keeps
+# behaving exactly as before. Reviving any of the three is the caller's step, after this
+# destiny, outside the run it is part of.
+
+- include: layout.yml
+
+- include: config.yml
+
+- include: install.yml
+
+- include: onboard.yml

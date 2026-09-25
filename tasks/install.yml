@@ -1,0 +1,42 @@
+# tasks/install.yml — fetch the agent binary.
+#
+# Two properties of this step were a four-link `&&` chain in the shell form it replaces,
+# and both are now the module's rather than the author's (soul/internal/coremod/url/fetched.go):
+#
+#   * DOWNLOAD BESIDE, THEN RENAME. core.url.fetched always writes a dot-temp in the
+#     TARGET's directory and materializes by rename. Writing over a running executable is
+#     ETXTBSY, and re-running against a host that came up but never reached online is the
+#     normal repair path — rename over a running binary the kernel allows, and the running
+#     process keeps its own inode.
+#   * THE SUM IS VERIFIED BEFORE chmod AND BEFORE rename, in that order and not merely
+#     "before publishing": a file that did not match never becomes executable and never
+#     becomes `soul`. Verifying after the rename would report tampering with a binary that
+#     is already in place. The module is strictly stronger than the chain here — its temp
+#     name is unpredictable, where `soul.new` was not.
+#
+# ★ THAT SAME INODE IS WHY THIS DESTINY CANNOT UPGRADE A RUNNING AGENT. Bump binary_url /
+# binary_sha256 against a host whose agent is up and the new binary is renamed into place,
+# the step reports `changed`, and the process goes on executing the OLD inode — for as long
+# as it lives. The run is green and the version on disk is not the version running. The
+# reactive restart production-conventions §6 prescribes for exactly this is unavailable
+# here: the agent applying the plan IS the service (tasks/main.yml). An upgrade is
+# therefore a two-part operation — this destiny puts the bytes in place, and the caller
+# restarts the unit afterwards, outside the run this destiny is part of.
+#
+# ⚠ One capability of the engine's blueprint has NO equivalent here: `soul_binary_ca:
+# keeper` (curl --cacert keeper-ca.pem, soulinstall.SoulBinaryCAKeeper). core.url.fetched
+# verifies against the SYSTEM trust store or not at all (insecure_skip_verify); it cannot
+# be pinned to one PEM. A mirror behind a private CA therefore needs that CA in the
+# image's trust store. The bootstrap channel is unaffected — it is always pinned to
+# vars.ca_path.
+- name: Fetch the verified soul binary
+  module: core.url.fetched
+  # The artifact host is remote and flaps; a TLS handshake timeout should not cost the
+  # whole install. Symmetric with node-exporter/vector.
+  retry: { count: 3, delay: 10s }
+  params:
+    url:      "${ input.binary_url }"
+    path:     "${ vars.bin_path }"
+    checksum: "${ input.binary_sha256 }"
+    mode:     "0755"
+    allow_private: "${ input.allow_private }"

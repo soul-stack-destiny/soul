@@ -1,0 +1,21 @@
+# service.yml of the destiny soul L0-wrapper (Trial, ADR-023).
+#
+# Not a service: its only role is to give the standalone destiny a render-only L0 check
+# through a scenario `apply: destiny`. The resolution mirrors production (slice A): the
+# name comes from service.yml::destiny[] and the URL from the case's
+# default_destiny_source, so an undeclared dependency is rejected here exactly as it
+# would be in a run.
+#
+# ⚠ Each case resolves the destiny as `file://../../{name}` relative to this directory,
+# which lands on the repository root ONLY while the checkout directory is named `soul`
+# (`{name}` has to be the last path segment — that is the resolver's rule, not a choice
+# here). Cloned under another directory name, the cases fail to find the destiny; rename
+# the checkout rather than editing the template.
+description: >-
+  L0-harness for destiny soul (ADR-023). Not a service — a scenario wrapper for
+  render-only Trial. state_schema is nominal: the wrapper writes no state.
+
+state_schema: {}
+
+destiny:
+  - { name: soul, ref: v1.0.0 }
