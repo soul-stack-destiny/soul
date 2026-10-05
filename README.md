@@ -73,9 +73,32 @@ and reports **unchanged** on a repeat: no step writes a value that differs run t
 the redeem is guarded on the seed certificate.
 
 `bootstrap_token` is omitted above because a registered host already holds an identity.
-A host that does **not** needs the token passed (`${ register.<mint>.hosts[…] }` from
-`core.bootstrap.issued`) — and reaching an unregistered machine at all needs a transport,
-which is `core.ssh.applied`'s job, not this destiny's.
+A machine with no agent yet is reached by `core.ssh.apply` instead: the Keeper delivers its
+own agent over SSH to `/var/lib/soul-stack/bin/soul` (from `keeper.yml::push.soul_binary_path`),
+applies this destiny with it, and hands each host its own token through `input_from:`, which
+names a field of the host's entry:
+
+```yaml
+- name: Install the agent on the new VMs
+  module: core.ssh.apply
+  params:
+    hosts: "${ register.mint.hosts }"   # from core.bootstrap.issued, reissue: true
+    ssh_provider: teleport
+    destiny: soul
+    input:
+      keeper_host:              "${ vars.keeper_endpoint_host }"
+      keeper_bootstrap_port:    "${ vars.keeper_bootstrap_port }"
+      keeper_event_stream_port: "${ vars.keeper_event_stream_port }"
+      keeper_ca:                "${ vault(vars.keeper_ca_path + '#ca') }"
+      binary_url:               "${ vars.soul_binary_url }"
+      binary_sha256:            "${ 'sha256:' + vars.soul_binary_sha256 }"
+    input_from:
+      bootstrap_token: bootstrap_token
+```
+
+The delivered agent only executes this destiny. The unit runs the binary this destiny
+fetched to `/usr/local/bin/soul`, and nothing here touches the delivered copy, which stays on
+the host.
 
 ## Seven invariants, and where each one is held
 
