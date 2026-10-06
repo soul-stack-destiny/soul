@@ -31,15 +31,18 @@ TimeoutStartSec=90s
 # Deliberately absent, NOT forgotten: ProtectSystem, ProtectHome, CapabilityBoundingSet,
 # MemoryDenyWriteExecute. Do not tighten without running an apply cycle.
 #
-# ★ This set must stay equal to the packaged unit's, directive for directive: the two
-# install models overwrite each other's unit at this very path, which is accepted, and only
-# stays harmless while the bodies agree. Keep them in step by hand until the out-of-tree
-# check exists (see the note in destiny.yml).
+# ★ This set must stay equal to the packaged unit's, directive for directive, with the one
+# exception below: the two install models overwrite each other's unit at this very path,
+# which is accepted, and only stays harmless while the bodies agree. Keep them in step by
+# hand until the out-of-tree check exists (see the note in destiny.yml).
+#
+# ★ No RestrictSUIDSGID, although the packaged unit still carries it (NIM-954). Everything
+# the agent runs inherits it, dpkg included, so a package whose postinst sets a setgid bit
+# fails to install: redis-tools' `chmod 2750 /var/log/redis` gets "Operation not permitted".
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictSUIDSGID=true
 LockPersonality=true
 # Soul state directory: plugin/binary cache keyed by SHA-256, TLS material (SoulSeed).
 ReadWritePaths=/var/lib/soul-stack

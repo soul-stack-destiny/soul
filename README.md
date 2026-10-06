@@ -36,8 +36,8 @@ accepted, and it is harmless because the two are kept the same where it matters.
 What keeps the overlap safe:
 
 - **the unit bodies agree directive for directive** — the same supervision (`Type=notify`,
-  watchdog, `StartLimit*` in `[Unit]`) and the same soft hardening profile, so neither side
-  confines the agent differently. Keep them in step **by hand**: the check that compared the
+  watchdog, `StartLimit*` in `[Unit]`) and the same soft hardening profile, bar one directive
+  (below). Keep them in step **by hand**: the check that compared the
   two files is pending (see the note above);
 - **this destiny also renders `/etc/soul/soul.env`**, which its own unit never reads. The
   packaged unit's `EnvironmentFile=` carries no `-` prefix, so systemd treats the file as
@@ -49,8 +49,12 @@ What keeps the overlap safe:
   The shell form this replaces chowned nothing either. Do not "improve" this by adding
   `owner:`.
 
-Two differences survive deliberately — the **account** and the **binary path**. So the one crossing that still needs a second apply is a packaged unit
-landing on a fresh-VM install — it names an account that host does not have.
+Three differences survive deliberately — the **account**, the **binary path** and
+**`RestrictSUIDSGID`**. This unit drops the last one: the agent's children inherit it, dpkg
+included, so a package whose postinst sets a setgid bit fails to install (`redis-tools`:
+`chmod 2750 /var/log/redis` → "Operation not permitted"). The packaged unit still carries it.
+The one crossing that still needs a second apply is a packaged unit landing on a fresh-VM
+install — it names an account that host does not have.
 
 ## Using it
 
