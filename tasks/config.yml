@@ -12,9 +12,9 @@
 # ★ THE UNIT PATH IS OWNED BY THIS DESTINY, and it is the path the DISTRIBUTION PACKAGE
 # uses too (`deploy/systemd/soul.service` → /etc/systemd/system/soul.service). Applied to
 # a host installed from the .deb this step REPLACES the packaged unit — with one that
-# carries no `User=`, no `EnvironmentFile=` and no StartLimit — and the swap lands at the
-# host's next restart, not during the run. The two install models are alternatives, not
-# layers; destiny.yml says so in its header.
+# carries no `User=`/`Group=` and no `EnvironmentFile=`, so the agent runs as root — and
+# the swap lands at the host's next restart, not during the run. The two install models
+# are alternatives, not layers; destiny.yml says so in its header.
 #
 # No `register:` and no `onchanges:` consumer anywhere: see tasks/main.yml on why nothing
 # here restarts the agent.
