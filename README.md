@@ -49,8 +49,9 @@ What keeps the overlap safe:
   The shell form this replaces chowned nothing either. Do not "improve" this by adding
   `owner:`.
 
-Three differences survive deliberately — the **account**, the **binary path** and
-**`RestrictSUIDSGID`**. This unit drops the last one: the agent's children inherit it, dpkg
+Four differences survive deliberately — the **account**, the **binary path**,
+**`EnvironmentFile=`** (this unit names the config directly; `soul.env` is rendered for the
+packaged unit, above) and **`RestrictSUIDSGID`**. This unit drops the last one: the agent's children inherit it, dpkg
 included, so a package whose postinst sets a setgid bit fails to install (`redis-tools`:
 `chmod 2750 /var/log/redis` → "Operation not permitted"). The packaged unit still carries it.
 The one crossing that still needs a second apply is a packaged unit landing on a fresh-VM

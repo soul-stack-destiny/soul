@@ -36,11 +36,12 @@ description: >-
 #   * ownership is not managed here at all (tasks/layout.yml), so a packaged agent keeps
 #     access to its own state.
 #
-# Three differences survive on purpose. Two are listed in that guard's `unitDivergences`: the
+# Four differences survive on purpose. Two are listed in that guard's `unitDivergences`: the
 # ACCOUNT (the package runs the agent as `soul-stack`; a fresh VM has no such account and no
-# package to create one) and the BINARY PATH. The third is RestrictSUIDSGID, which this unit
-# drops because it stops the agent installing a package that sets a setgid bit; the packaged
-# unit still carries it (NIM-954). So the one crossing that still needs a second
+# package to create one) and the BINARY PATH. The third is EnvironmentFile=: this unit names
+# the config directly and still renders soul.env for the packaged unit (above). The fourth is
+# RestrictSUIDSGID, which this unit drops because it stops the agent installing a package
+# that sets a setgid bit; the packaged unit still carries it (NIM-954). So the one crossing that still needs a second
 # apply is a packaged unit landing on a fresh-VM install: it names an account that host does
 # not have. Everything else survives the overlap.
 #
